@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Location Tracker</title>
+    <!-- Leaflet.js Map Library CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background: linear-gradient(135deg, #1a2980, #26d0ce);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+        header {
+            background: linear-gradient(to right, #2c3e50, #4a6491);
+            color: white;
+            padding: 25px 30px;
+            text-align: center;
+        }
+        header h1 {
+            font-size: 2.4rem;
+            margin-bottom: 10px;
+        }
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        .disclaimer {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            margin: 20px;
+            border-radius: 10px;
+            border-left: 5px solid #ffc107;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+        .disclaimer strong {
+            color: #856404;
+        }
+        #map {
+            height: 500px;
+            width: 100%;
+            margin: 20px;
+            border-radius: 15px;
+            border: 3px solid #ddd;
+            z-index: 1;
+        }
+        .status-panel {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+        }
+        .status-box {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+            margin: 10px;
+            flex-grow: 1;
+            min-width: 250px;
+            text-align: center;
+            border-top: 4px solid #3498db;
+        }
+        .status-box h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+        .coordinates {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #f1f8ff;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            word-break: break-all;
+            color: #2c3e50;
+            border: 1px dashed #3498db;
+        }
+        #statusText {
+            font-weight: bold;
+            color: #27ae60;
+            font-size: 1.1rem;
+        }
+        footer {
+            text-align: center;
+            padding: 25px;
+            color: #7f8c8d;
+            font-size: 0.9rem;
+            border-top: 1px solid #ecf0f1;
+        }
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            header h1 { font-size: 1.8rem; }
+            #map { height: 400px; margin: 10px; }
+            .status-panel { flex-direction: column; }
+            .status-box { min-width: auto; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📍 Real-Time Location Tracker</h1>
+            <p>This tool uses your device's GPS to display your live location on an interactive map. <strong>Sharing requires explicit user consent.</strong></p>
+        </header>
+
+        <div class="disclaimer">
+            <strong>⚠️ Important:</strong> This tracker works by asking for permission in the web browser. It <strong>cannot</strong> secretly track another person's phone. It is designed for personal use or for mutual location sharing within a trusted group where everyone has consented.
+        </div>
+
+        <!-- The Map Container -->
+        <div id="map"></div>
+
+        <!-- Status Information Panel -->
+        <div class="status-panel">
+            <div class="status-box">
+                <h3>Your Coordinates</h3>
+                <div class="coordinates" id="coordinates">Waiting for GPS signal...</div>
+            </div>
+            <div class="status-box">
+                <h3>Tracking Status</h3>
+                <p id="statusText">Initializing...</p>
+                <p id="accuracy">Accuracy: -- meters</p>
+            </div>
+        </div>
+
+        <footer>
+            <p>Built with HTML5 Geolocation API & Leaflet.js | For legal and consensual use only.</p>
+        </footer>
+    </div>
+
+    <!-- Leaflet.js Map Library JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Main Application Script -->
+    <script>
+        // Initialize the map, setting a default view
+        const map = L.map('map').setView([0.3136, 32.5811], 10); // Default view near Kampala
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // Variable to hold the user's marker
+        let userMarker = null;
+        let watchId = null;
+
+        // UI Elements
+        const coordinatesDisplay = document.getElementById('coordinates');
+        const statusText = document.getElementById('statusText');
+        const accuracyDisplay = document.getElementById('accuracy');
+
+        // Function to handle successful location retrieval
+        function onLocationSuccess(position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+
+            // Update the coordinates display
+            coordinatesDisplay.textContent = `Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`;
+            accuracyDisplay.textContent = `Accuracy: ${Math.round(accuracy)} meters`;
+
+            // If a marker doesn't exist, create one. Otherwise, update its position.
+            if (!userMarker) {
+                userMarker = L.marker([lat, lng]).addTo(map);
+                statusText.textContent = "Live Tracking Active";
+                statusText.style.color = "#27ae60";
+            } else {
+                userMarker.setLatLng([lat, lng]);
+            }
+
+            // Center the map on the new location
+            map.setView([lat, lng], map.getZoom());
+        }
+
+        // Function to handle location errors
+        function onLocationError(error) {
+            console.error("Geolocation error:", error);
+            statusText.textContent = "Error: " + getErrorMessage(error);
+            statusText.style.color = "#e74c3c";
+            coordinatesDisplay.textContent = "Location unavailable.";
+        }
+
+        // Helper to get user-friendly error messages
+        function getErrorMessage(error) {
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    return "Permission denied. Please allow location access.";
+                case error.POSITION_UNAVAILABLE:
+                    return "Location information unavailable.";
+                case error.TIMEOUT:
+                    return "Location request timed out.";
+                default:
+                    return "An unknown error occurred.";
+            }
+        }
+
+        // Main function to start watching the position
+        function startTracking() {
+            if (!navigator.geolocation) {
+                statusText.textContent = "Geolocation is not supported by your browser.";
+                return;
+            }
+
+            statusText.textContent = "Requesting location access...";
+            // Request high-accuracy, continuous location updates[citation:1]
+            watchId = navigator.geolocation.watchPosition(
+                onLocationSuccess,
+                onLocationError,
+                {
+                    enableHighAccuracy: true, // Use GPS if available
+                    timeout: 10000,          // Wait up to 10 seconds
+                    maximumAge: 0            // Don't use a cached position
+                }
+            );
+        }
+
+        // Start tracking when the page loads
+        window.onload = startTracking;
+
+        // Clean up the watchPosition if the page is closed/unloaded
+        window.addEventListener('beforeunload', () => {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+            }
+        });
+    </script>
+</body>
+</html>
